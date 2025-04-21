@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: ray-distributed-demo-
+spec:
+  entrypoint: ray-demo
+  templates:
+    - name: ray-demo
+      plugin:
+        ray:
+          # RayJob definition (Ray Operator must be installed in advance)
+          apiVersion: ray.io/v1
+          kind: RayJob
+          metadata:
+            name: ray-example
+            namespace: argo
+          spec:
+            entrypoint: python /app/ray_script.py
+            runtimeEnv: |
+              pip:
+                - requests==2.26.0
+            clusterSpec:
+              headGroupSpec:
+                rayStartParams:
+                  dashboard-host: '0.0.0.0'
+                template:
+                  spec:
+                    containers:
+                      - name: ray-head
+                        image: rayproject/ray:2.9.3
+                        ports:
+                          - containerPort: 6379
+                          - containerPort: 8265  # Dashboard
+                        resources:
+                          limits:
+                            cpu: 2
+                            memory: 4Gi
+                        volumeMounts:
+                          - name: code
+                            mountPath: /app
+              workerGroupSpecs:
+                - replicas: 2
+                  minReplicas: 1
+                  maxReplicas: 3
+                  groupName: worker
+                  rayStartParams: {}
+                  template:
+                    spec:
+                      containers:
+                        - name: ray-worker
+                          image: rayproject/ray:2.9.3
+                          resources:
+                            limits:
+                              cpu: 4
+                              memory: 8Gi
+                          volumeMounts:
+                            - name: code
+                              mountPath: /app
+            shutdownAfterJobFinishes: true
+
+      volumes:
+        - name: code
+          persistentVolumeClaim:
+            claimName: ray-code-pvc
